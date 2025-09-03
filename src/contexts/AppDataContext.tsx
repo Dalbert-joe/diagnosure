@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 interface Symptom {
   id: string;
@@ -160,54 +160,33 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const analyzeSymptomsWithAI = async (symptomTexts: string[]): Promise<Diagnosis[]> => {
     try {
-      // Mock AI analysis for now - in production this would call Google Gemini API
-      const mockDiagnoses: Diagnosis[] = [
-        {
-          id: '1',
-          condition: 'Common Cold',
-          probability: 75,
-          reasoning: 'Based on symptoms of congestion, mild fever, and fatigue, this appears to be a viral upper respiratory infection.',
-          urgency: 'low',
-          doctorRecommended: false
+      // Replace with your backend endpoint
+      const response = await fetch('http://localhost:5000/api/diagnosis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        {
-          id: '2',
-          condition: 'Seasonal Allergies',
-          probability: 60,
-          reasoning: 'Symptoms align with allergic rhinitis, especially if occurring during pollen season.',
-          urgency: 'low',
-          doctorRecommended: false
-        },
-        {
-          id: '3',
-          condition: 'Sinusitis',
-          probability: 45,
-          reasoning: 'Nasal congestion and facial pressure could indicate sinus inflammation.',
-          urgency: 'medium',
-          doctorRecommended: true
-        },
-        {
-          id: '4',
-          condition: 'Influenza',
-          probability: 30,
-          reasoning: 'While less likely, flu symptoms can overlap with current presentation.',
-          urgency: 'medium',
-          doctorRecommended: true
-        },
-        {
-          id: '5',
-          condition: 'Bacterial Infection',
-          probability: 20,
-          reasoning: 'Less common but possible if symptoms worsen or persist beyond typical viral duration.',
-          urgency: 'high',
-          doctorRecommended: true
-        }
-      ];
-
-      // Add a small delay to simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      return mockDiagnoses;
+        body: JSON.stringify({
+          // You can add more fields as needed (age, gender, etc.)
+          symptoms: symptomTexts,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to get diagnosis from backend');
+      const data = await response.json();
+      // Expecting: { status: 'success', conditions: [...] }
+      if (data.status === 'success' && Array.isArray(data.conditions)) {
+        // Map backend response to Diagnosis[]
+        return data.conditions.map((cond: any, idx: number) => ({
+          id: String(idx + 1),
+          condition: cond.name || cond.condition || 'Unknown',
+          probability: cond.prob || 0,
+          reasoning: cond.reason || '',
+          urgency: cond.severity || 'low',
+          doctorRecommended: cond.doctor ? true : false,
+        }));
+      } else {
+        return [];
+      }
     } catch (error) {
       console.error('Error analyzing symptoms:', error);
       return [];
