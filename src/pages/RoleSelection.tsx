@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/enhanced-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { User, Stethoscope, Settings } from 'lucide-react';
+import { User, Stethoscope } from 'lucide-react';
 
 const RoleSelection = () => {
   const navigate = useNavigate();
@@ -20,13 +20,6 @@ const RoleSelection = () => {
       icon: Stethoscope,
       route: '/doctor/login',
       color: 'medical'
-    },
-    {
-      title: 'Admin',
-      description: 'System administration and oversight',
-      icon: Settings,
-      route: '/admin/dashboard',
-      color: 'secondary'
     }
   ];
 
@@ -44,7 +37,7 @@ const RoleSelection = () => {
         </div>
 
         {/* Role Cards */}
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 gap-6 justify-center">
           {roles.map((role) => {
             const IconComponent = role.icon;
             return (

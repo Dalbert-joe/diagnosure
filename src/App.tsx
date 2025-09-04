@@ -17,7 +17,6 @@ import Diagnosis from "./pages/Diagnosis";
 import HospitalBooking from "./pages/HospitalBooking";
 import PatientProfile from "./pages/PatientProfile";
 import DoctorDashboard from "./pages/DoctorDashboard";
-import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 // Context Providers
@@ -56,9 +55,6 @@ const App = () => (
               
               {/* Doctor Flow */}
               <Route path="/doctor/dashboard" element={<DoctorDashboard />} />
-              
-              {/* Admin Flow */}
-              <Route path="/admin/dashboard" element={<AdminDashboard />} />
               
               {/* Fallback */}
               <Route path="*" element={<NotFound />} />
