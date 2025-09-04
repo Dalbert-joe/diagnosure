@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Send, Camera, Mic, MessageCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import GeminiApiKeyPrompt from '@/components/GeminiApiKeyPrompt';
 
 const ChatBot = () => {
   const navigate = useNavigate();
@@ -19,12 +20,17 @@ const ChatBot = () => {
     symptoms,
     addSymptom,
     analyzeSymptomsWithAI,
-    setDiagnoses
+    setDiagnoses,
+    symptomContext,
+    updateSymptomContext
   } = useAppData();
   
   const [inputMessage, setInputMessage] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [conversationStage, setConversationStage] = useState<'greeting' | 'collecting' | 'followup' | 'complete'>('greeting');
+  const [followUpStep, setFollowUpStep] = useState<'medications' | 'duration' | 'conditions' | 'complete'>('medications');
+  const [followUpResponses, setFollowUpResponses] = useState<string[]>([]);
+  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,23 +61,12 @@ const ChatBot = () => {
       }
       
       setConversationStage('followup');
-      addChatMessage("Thank you for describing your symptoms. Now I need some additional information:", 'ai');
+      setFollowUpStep('medications');
+      addChatMessage("Thank you for describing your symptoms. Now I need some additional information for a more accurate diagnosis:", 'ai');
       
       setTimeout(() => {
-        addChatMessage("1. Are you currently taking any medications or pills?", 'ai');
+        addChatMessage("Are you currently taking any medications or pills? (Please be specific)", 'ai');
       }, 1000);
-      
-      setTimeout(() => {
-        addChatMessage("2. How long have you been experiencing these symptoms?", 'ai');
-      }, 2000);
-      
-      setTimeout(() => {
-        addChatMessage("3. Do you have any existing medical conditions?", 'ai');
-      }, 3000);
-      
-      setTimeout(() => {
-        addChatMessage("Please answer these questions, and then type 'analyze' when ready for diagnosis.", 'ai');
-      }, 4000);
       
       return;
     }
@@ -79,28 +74,67 @@ const ChatBot = () => {
     // Check if user typed "analyze"
     if (userMessage.toLowerCase() === 'analyze' && conversationStage === 'followup') {
       setIsAnalyzing(true);
-      addChatMessage("Analyzing your symptoms with AI... Please wait.", 'ai');
+      addChatMessage("Analyzing your symptoms with AI... This may take a moment.", 'ai');
       
       try {
         const symptomTexts = symptoms.map(s => s.text);
-        const diagnoses = await analyzeSymptomsWithAI(symptomTexts);
+        const context = {
+          medications: symptomContext.medications,
+          duration: symptomContext.duration,
+          existingConditions: symptomContext.existingConditions,
+          followUpResponses
+        };
+        
+        const diagnoses = await analyzeSymptomsWithAI(symptomTexts, context);
         setDiagnoses(diagnoses);
         
-        addChatMessage("Analysis complete! I've identified several possible conditions. Would you like to view the detailed diagnosis or continue chatting?", 'ai');
+        addChatMessage(
+          `Analysis complete! I've identified ${diagnoses.length} possible conditions based on your symptoms. ` +
+          `The most likely condition is "${diagnoses[0]?.condition}" with ${diagnoses[0]?.probability}% probability. ` +
+          `Would you like to view the detailed diagnosis or continue chatting?`, 
+          'ai'
+        );
         setConversationStage('complete');
       } catch (error) {
-        addChatMessage("Sorry, there was an error analyzing your symptoms. Please try again later.", 'ai');
+        console.error('AI Analysis error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        
+        if (errorMessage.includes('API key')) {
+          setShowApiKeyPrompt(true);
+          addChatMessage("I need your Gemini API key to provide AI diagnosis. Please provide it to continue.", 'ai');
+        } else {
+          addChatMessage(`Sorry, there was an error analyzing your symptoms: ${errorMessage}`, 'ai');
+        }
       } finally {
         setIsAnalyzing(false);
       }
       return;
     }
 
-    // Process symptom collection
-    if (conversationStage === 'collecting' || conversationStage === 'followup') {
-      if (conversationStage === 'collecting') {
-        addSymptom(userMessage);
+    // Handle follow-up questions
+    if (conversationStage === 'followup') {
+      const newResponses = [...followUpResponses, userMessage];
+      setFollowUpResponses(newResponses);
+      
+      if (followUpStep === 'medications') {
+        updateSymptomContext({ medications: userMessage });
+        setFollowUpStep('duration');
+        addChatMessage("Thank you. How long have you been experiencing these symptoms?", 'ai');
+      } else if (followUpStep === 'duration') {
+        updateSymptomContext({ duration: userMessage });
+        setFollowUpStep('conditions');
+        addChatMessage("Got it. Do you have any existing medical conditions or take regular medications?", 'ai');
+      } else if (followUpStep === 'conditions') {
+        updateSymptomContext({ existingConditions: userMessage, followUpResponses: newResponses });
+        setFollowUpStep('complete');
+        addChatMessage("Perfect! I now have all the information needed. Type 'analyze' when you're ready for your AI diagnosis.", 'ai');
       }
+      return;
+    }
+
+    // Process symptom collection
+    if (conversationStage === 'collecting') {
+      addSymptom(userMessage);
       
       // AI responses based on keywords and context
       let aiResponse = generateAIResponse(userMessage, conversationStage);
@@ -336,6 +370,22 @@ const ChatBot = () => {
           </CardContent>
         </Card>
       </div>
+      
+      {showApiKeyPrompt && (
+        <GeminiApiKeyPrompt
+          onApiKeySet={() => {
+            setShowApiKeyPrompt(false);
+            toast({
+              title: "API Key Set Successfully",
+              description: "You can now use AI-powered diagnosis. Try typing 'analyze' again.",
+            });
+          }}
+          onCancel={() => {
+            setShowApiKeyPrompt(false);
+            addChatMessage("AI diagnosis requires an API key. You can continue chatting or provide the key later.", 'ai');
+          }}
+        />
+      )}
     </div>
   );
 };

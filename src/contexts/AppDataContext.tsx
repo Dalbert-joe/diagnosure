@@ -64,7 +64,26 @@ interface AppDataContextType {
   getDoctorBookings: () => Booking[];
   
   // AI Integration
-  analyzeSymptomsWithAI: (symptoms: string[]) => Promise<Diagnosis[]>;
+  analyzeSymptomsWithAI: (symptoms: string[], additionalContext?: {
+    medications?: string;
+    duration?: string;
+    existingConditions?: string;
+    followUpResponses?: string[];
+  }) => Promise<Diagnosis[]>;
+  
+  // Symptom Context
+  symptomContext: {
+    medications?: string;
+    duration?: string;
+    existingConditions?: string;
+    followUpResponses?: string[];
+  };
+  updateSymptomContext: (context: Partial<{
+    medications?: string;
+    duration?: string;
+    existingConditions?: string;
+    followUpResponses?: string[];
+  }>) => void;
   
   // Location & Hospitals
   userLocation: { lat: number; lng: number } | null;
@@ -158,60 +177,67 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
-  const analyzeSymptomsWithAI = async (symptomTexts: string[]): Promise<Diagnosis[]> => {
-    try {
-      // Mock AI analysis for now - in production this would call Google Gemini API
-      const mockDiagnoses: Diagnosis[] = [
-        {
-          id: '1',
-          condition: 'Common Cold',
-          probability: 75,
-          reasoning: 'Based on symptoms of congestion, mild fever, and fatigue, this appears to be a viral upper respiratory infection.',
-          urgency: 'low',
-          doctorRecommended: false
-        },
-        {
-          id: '2',
-          condition: 'Seasonal Allergies',
-          probability: 60,
-          reasoning: 'Symptoms align with allergic rhinitis, especially if occurring during pollen season.',
-          urgency: 'low',
-          doctorRecommended: false
-        },
-        {
-          id: '3',
-          condition: 'Sinusitis',
-          probability: 45,
-          reasoning: 'Nasal congestion and facial pressure could indicate sinus inflammation.',
-          urgency: 'medium',
-          doctorRecommended: true
-        },
-        {
-          id: '4',
-          condition: 'Influenza',
-          probability: 30,
-          reasoning: 'While less likely, flu symptoms can overlap with current presentation.',
-          urgency: 'medium',
-          doctorRecommended: true
-        },
-        {
-          id: '5',
-          condition: 'Bacterial Infection',
-          probability: 20,
-          reasoning: 'Less common but possible if symptoms worsen or persist beyond typical viral duration.',
-          urgency: 'high',
-          doctorRecommended: true
-        }
-      ];
+  // Store additional symptom context
+  const [symptomContext, setSymptomContext] = useState<{
+    medications?: string;
+    duration?: string;
+    existingConditions?: string;
+    followUpResponses?: string[];
+  }>({});
 
-      // Add a small delay to simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+  const analyzeSymptomsWithAI = async (
+    symptomTexts: string[], 
+    additionalContext?: {
+      medications?: string;
+      duration?: string;
+      existingConditions?: string;
+      followUpResponses?: string[];
+    }
+  ): Promise<Diagnosis[]> => {
+    try {
+      // Check if Gemini API key is available
+      const apiKey = localStorage.getItem('gemini_api_key');
       
-      return mockDiagnoses;
+      if (!apiKey) {
+        // Show API key input modal
+        const userApiKey = prompt(
+          'Please enter your Gemini API key to enable AI diagnosis:\n\n' +
+          'Get your free API key from: https://makersuite.google.com/app/apikey\n\n' +
+          'Note: In production, this would be handled securely by the backend.'
+        );
+        
+        if (!userApiKey) {
+          throw new Error('Gemini API key is required for AI diagnosis');
+        }
+        
+        localStorage.setItem('gemini_api_key', userApiKey);
+      }
+
+      const { geminiService } = await import('@/services/geminiService');
+      
+      const request = {
+        symptoms: symptomTexts,
+        medications: additionalContext?.medications || symptomContext.medications,
+        duration: additionalContext?.duration || symptomContext.duration,
+        existingConditions: additionalContext?.existingConditions || symptomContext.existingConditions,
+        followUpResponses: additionalContext?.followUpResponses || symptomContext.followUpResponses || []
+      };
+
+      const diagnoses = await geminiService.analyzeSymptomsWithAI(request);
+      return diagnoses;
     } catch (error) {
       console.error('Error analyzing symptoms:', error);
-      return [];
+      throw error;
     }
+  };
+
+  const updateSymptomContext = (context: Partial<{
+    medications?: string;
+    duration?: string;
+    existingConditions?: string;
+    followUpResponses?: string[];
+  }>) => {
+    setSymptomContext(prev => ({ ...prev, ...context }));
   };
 
   const value = {
@@ -228,6 +254,8 @@ export const AppDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     updateBookingStatus,
     getDoctorBookings,
     analyzeSymptomsWithAI,
+    symptomContext,
+    updateSymptomContext,
     userLocation,
     setUserLocation,
     nearbyHospitals,

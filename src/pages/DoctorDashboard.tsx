@@ -4,7 +4,8 @@ import { useAppData } from '@/contexts/AppDataContext';
 import { Button } from '@/components/ui/enhanced-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { LogOut, Users, Clock, AlertTriangle } from 'lucide-react';
+import { LogOut, Users, Clock, AlertTriangle, TrendingUp } from 'lucide-react';
+import { useMemo } from 'react';
 
 const DoctorDashboard = () => {
   const navigate = useNavigate();
@@ -12,6 +13,53 @@ const DoctorDashboard = () => {
   const { getDoctorBookings, updateBookingStatus } = useAppData();
 
   const bookings = getDoctorBookings();
+
+  // Calculate priority scores and sort bookings
+  const prioritizedBookings = useMemo(() => {
+    return bookings.map(booking => {
+      // Calculate priority score using symptoms, urgency, and note
+      let priorityScore = 0;
+      
+      // Base urgency score
+      const urgencyScores = { critical: 100, high: 75, medium: 50, low: 25 };
+      priorityScore += urgencyScores[booking.urgency as keyof typeof urgencyScores] || 25;
+      
+      // Analyze symptoms and note for severity keywords
+      const allText = [...booking.symptoms, booking.note].join(' ').toLowerCase();
+      
+      // High severity keywords
+      const highSeverityKeywords = ['severe', 'intense', 'unbearable', 'emergency', 'critical', 'chest pain', 'difficulty breathing', 'unconscious', 'bleeding heavily'];
+      highSeverityKeywords.forEach(keyword => {
+        if (allText.includes(keyword)) priorityScore += 15;
+      });
+      
+      // Medium severity keywords  
+      const mediumSeverityKeywords = ['moderate', 'persistent', 'ongoing', 'fever', 'pain', 'bleeding', 'dizzy', 'nausea'];
+      mediumSeverityKeywords.forEach(keyword => {
+        if (allText.includes(keyword)) priorityScore += 5;
+      });
+      
+      // Duration indicators
+      if (allText.includes('days') || allText.includes('weeks')) priorityScore += 10;
+      if (allText.includes('sudden') || allText.includes('immediate')) priorityScore += 20;
+      
+      // Age factor (elderly get higher priority)
+      if (booking.age >= 65) priorityScore += 10;
+      if (booking.age <= 5) priorityScore += 15; // Children also get higher priority
+      
+      return {
+        ...booking,
+        priorityScore: Math.min(100, priorityScore)
+      };
+    }).sort((a, b) => b.priorityScore - a.priorityScore);
+  }, [bookings]);
+
+  const getPriorityColor = (score: number) => {
+    if (score >= 80) return 'bg-destructive text-destructive-foreground';
+    if (score >= 60) return 'bg-warning text-warning-foreground';
+    if (score >= 40) return 'bg-info text-info-foreground';
+    return 'bg-success text-success-foreground';
+  };
 
   const getUrgencyColor = (urgency: string) => {
     switch (urgency) {
@@ -85,15 +133,23 @@ const DoctorDashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {bookings.length > 0 ? (
+            {prioritizedBookings.length > 0 ? (
               <div className="space-y-4">
-                {bookings.map((booking) => (
-                  <Card key={booking.id} className="border-l-4 border-l-primary">
+                {prioritizedBookings.map((booking) => (
+                  <Card key={booking.id} className={`border-l-4 ${
+                    booking.priorityScore >= 80 ? 'border-l-destructive' :
+                    booking.priorityScore >= 60 ? 'border-l-warning' :
+                    booking.priorityScore >= 40 ? 'border-l-info' : 'border-l-success'
+                  }`}>
                     <CardContent className="pt-4">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-2">
                             <h3 className="font-semibold">{booking.patientName}</h3>
+                            <Badge className={getPriorityColor(booking.priorityScore)}>
+                              <TrendingUp className="w-3 h-3 mr-1" />
+                              Priority: {booking.priorityScore}
+                            </Badge>
                             <Badge className={getUrgencyColor(booking.urgency)}>
                               {booking.urgency.toUpperCase()}
                             </Badge>
@@ -113,11 +169,18 @@ const DoctorDashboard = () => {
                               <p className="text-sm"><strong>Symptoms:</strong> {booking.symptoms.join(', ')}</p>
                             </div>
                           )}
+                          {booking.diagnosis && (
+                            <div className="mt-2 p-2 bg-accent/30 rounded">
+                              <p className="text-sm"><strong>AI Diagnosis:</strong> {booking.diagnosis}</p>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center space-x-2 ml-4">
-                          <Button variant="outline" size="sm" onClick={() => updateBookingStatus(booking.id, 'confirmed')}>
-                            Accept
-                          </Button>
+                          {booking.status === 'pending' && (
+                            <Button variant="outline" size="sm" onClick={() => updateBookingStatus(booking.id, 'confirmed')}>
+                              Accept
+                            </Button>
+                          )}
                           <Button variant="medical" size="sm">
                             Chat
                           </Button>

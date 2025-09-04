@@ -14,7 +14,7 @@ import { toast } from '@/hooks/use-toast';
 const HospitalBooking = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { addBooking, symptoms } = useAppData();
+  const { addBooking, symptoms, diagnoses } = useAppData();
   
   const [formData, setFormData] = useState({
     hospitalName: '',
@@ -24,6 +24,27 @@ const HospitalBooking = () => {
     note: ''
   });
 
+  // Determine urgency from AI diagnosis if available
+  const getBookingUrgency = () => {
+    if (diagnoses.length === 0) return 'medium';
+    
+    // Use the highest urgency from all diagnoses
+    const urgencyLevels = { low: 1, medium: 2, high: 3, critical: 4 };
+    const maxUrgency = diagnoses.reduce((max, diagnosis) => {
+      const currentLevel = urgencyLevels[diagnosis.urgency];
+      return currentLevel > max ? currentLevel : max;
+    }, 0);
+    
+    const urgencyMap = { 1: 'low', 2: 'medium', 3: 'high', 4: 'critical' };
+    return urgencyMap[maxUrgency as keyof typeof urgencyMap] || 'medium';
+  };
+
+  // Get primary diagnosis for booking
+  const getPrimaryDiagnosis = () => {
+    if (diagnoses.length === 0) return undefined;
+    return `${diagnoses[0].condition} (${diagnoses[0].probability}% probability)`;
+  };
+
   const mockHospitals = [
     { name: 'City General Hospital', address: '123 Main St, Chennai, TN 600001' },
     { name: 'Apollo Health Center', address: '456 Park Ave, Chennai, TN 600002' },
@@ -32,6 +53,62 @@ const HospitalBooking = () => {
   ];
 
   const timeSlots = ['Morning (9AM-12PM)', 'Afternoon (1PM-4PM)', 'Evening (5PM-8PM)', 'Night (8PM-11PM)'];
+
+  const handleEmergencySOS = () => {
+    // Get user location and create emergency booking
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        const emergencyBooking = {
+          patientId: user!.id,
+          patientName: user!.name,
+          age: user!.age || 0,
+          gender: user!.gender || 'not specified',
+          hospitalName: 'Emergency Services',
+          hospitalAddress: `Location: ${position.coords.latitude}, ${position.coords.longitude}`,
+          slot: 'Emergency',
+          date: new Date().toISOString().split('T')[0],
+          note: `EMERGENCY SOS - Immediate medical attention required. Location: Lat ${position.coords.latitude}, Lng ${position.coords.longitude}. Symptoms: ${symptoms.map(s => s.text).join(', ')}`,
+          status: 'pending' as const,
+          urgency: 'critical' as const,
+          symptoms: symptoms.map(s => s.text),
+          diagnosis: getPrimaryDiagnosis()
+        };
+        
+        addBooking(emergencyBooking);
+        
+        toast({
+          title: "Emergency SOS Activated!",
+          description: "Emergency services have been notified. Help is on the way.",
+          variant: "destructive"
+        });
+      }, () => {
+        // Fallback without location
+        const emergencyBooking = {
+          patientId: user!.id,
+          patientName: user!.name,
+          age: user!.age || 0,
+          gender: user!.gender || 'not specified',
+          hospitalName: 'Emergency Services',
+          hospitalAddress: 'Location not available',
+          slot: 'Emergency',
+          date: new Date().toISOString().split('T')[0],
+          note: `EMERGENCY SOS - Immediate medical attention required. Symptoms: ${symptoms.map(s => s.text).join(', ')}`,
+          status: 'pending' as const,
+          urgency: 'critical' as const,
+          symptoms: symptoms.map(s => s.text),
+          diagnosis: getPrimaryDiagnosis()
+        };
+        
+        addBooking(emergencyBooking);
+        
+        toast({
+          title: "Emergency SOS Activated!",
+          description: "Emergency services have been notified.",
+          variant: "destructive"
+        });
+      });
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,8 +133,9 @@ const HospitalBooking = () => {
       date: formData.date,
       note: formData.note,
       status: 'pending' as const,
-      urgency: 'medium' as const,
-      symptoms: symptoms.map(s => s.text)
+      urgency: getBookingUrgency() as 'low' | 'medium' | 'high' | 'critical',
+      symptoms: symptoms.map(s => s.text),
+      diagnosis: getPrimaryDiagnosis()
     };
 
     addBooking(booking);
@@ -166,6 +244,22 @@ const HospitalBooking = () => {
                 />
               </div>
 
+              {diagnoses.length > 0 && (
+                <div className="p-4 bg-accent/30 rounded-lg">
+                  <h4 className="font-medium mb-2">AI Diagnosis Results</h4>
+                  <div className="text-sm space-y-2">
+                    <p><strong>Primary Condition:</strong> {diagnoses[0].condition} ({diagnoses[0].probability}%)</p>
+                    <p><strong>Urgency Level:</strong> <span className={`font-medium ${
+                      getBookingUrgency() === 'critical' ? 'text-destructive' :
+                      getBookingUrgency() === 'high' ? 'text-warning' : 'text-muted-foreground'
+                    }`}>{getBookingUrgency().toUpperCase()}</span></p>
+                    {diagnoses[0].doctorRecommended && (
+                      <p className="text-warning"><strong>⚠️ Doctor consultation recommended</strong></p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {symptoms.length > 0 && (
                 <div className="p-4 bg-accent/30 rounded-lg">
                   <h4 className="font-medium mb-2">Your Recorded Symptoms</h4>
@@ -180,10 +274,22 @@ const HospitalBooking = () => {
                 </div>
               )}
 
-              <Button type="submit" variant="gradient" size="lg" className="w-full">
-                <Calendar className="w-5 h-5 mr-2" />
-                Confirm Appointment
-              </Button>
+              <div className="flex space-x-4">
+                <Button type="submit" variant="gradient" size="lg" className="flex-1">
+                  <Calendar className="w-5 h-5 mr-2" />
+                  Confirm Appointment
+                </Button>
+                
+                <Button 
+                  type="button" 
+                  variant="emergency" 
+                  size="lg"
+                  onClick={handleEmergencySOS}
+                  className="px-6"
+                >
+                  🚨 Emergency SOS
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>
